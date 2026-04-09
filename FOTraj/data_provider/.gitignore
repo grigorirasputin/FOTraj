@@ -1,0 +1,33 @@
+# ========================
+# Python & Environment
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+.ipynb_checkpoints/
+
+# ========================
+# FOTraj Specific Data
+# ========================
+# Ignore all raw and processed dataset files
+datasets/**/*.txt
+datasets/**/*.csv
+
+# Ignore model checkpoints (these get massive quickly)
+checkpoints/*
+!checkpoints/.gitkeep
+
+# Ignore training logs
+logs/*
+!logs/.gitkeep
+
+# Ignore locally downloaded HuggingFace/LLaMA weights (if any)
+LLAMA/
+meta-llama/
+
+# General log files
+*.log

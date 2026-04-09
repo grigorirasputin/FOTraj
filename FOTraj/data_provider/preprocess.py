@@ -3,12 +3,19 @@ import os
 import random
 import time
 
+
 import numpy as np
 import pandas as pd
 from collections import defaultdict
 from datetime import datetime
 from tqdm import tqdm
 from multiprocessing import Pool, Manager
+
+
+import ast
+import time
+from collections import defaultdict
+from tqdm import tqdm
 
 np.random.seed(42)
 
@@ -134,54 +141,86 @@ def chengdu_merge(noise=False):
                     merged_file.write(line)
 
 
-def process_sd(data_dir, data_name, noise=False):
+
+def process_sd_ultra_low_ram(data_dir, data_name, noise=False):
     min_sd_traj_num = 25
     test_traj_num = 5
+    
     if noise:
         file_path = f"{data_dir}/processed_{data_name}_noise.csv"
+        data_name = f"{data_name}_noise"
     else:
         file_path = f"{data_dir}/processed_{data_name}.csv"
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
 
-    sd_cnt = defaultdict(list)
-    for eachline in tqdm(lines):
-        traj = eval(eachline.strip())
-        if not traj:
-            continue
-        s, d = traj[0][0], traj[-1][0]
-        converted_traj = [(grid, datetime.fromtimestamp(timestamp).timetuple()[:6]) for grid, timestamp in traj]
-        sd_cnt[(s, d)].append(converted_traj)
-    if noise:
-        data_name = f"{data_name}_noise"
+    print(f"Loading merged file: {file_path}")
+    
+    # ---------------------------------------------------------
+    # PASS 1: Indexing (Ultra-low RAM, stores only line integers)
+    # ---------------------------------------------------------
+    sd_lines = defaultdict(list)
+    
+    with open(file_path, 'r') as file:
+        for line_idx, line in enumerate(tqdm(file, desc="Pass 1: Indexing SD Pairs")):
+            line = line.strip()
+            if not line: continue
+            
+            # Fast parsing just to find Source and Destination
+            traj = ast.literal_eval(line)
+            if traj:
+                s, d = traj[0][0], traj[-1][0]
+                sd_lines[(s, d)].append(line_idx)
+                
+    # Figure out exactly which lines belong in train vs test
+    train_targets = set()
+    test_targets = set()
+    
+    for (s, d), lines in sd_lines.items():
+        if len(lines) >= min_sd_traj_num:
+            train_targets.update(lines[:-test_traj_num]) # All but last 5
+            test_targets.update(lines[-test_traj_num:])  # Last 5
+            
+    # Free up the dictionary from RAM completely
+    del sd_lines 
+    print(f"\nFound {len(train_targets) + len(test_targets)} valid trajectories across {len(test_targets)//5} SD pairs.")
+
+    # ---------------------------------------------------------
+    # PASS 2: Writing (Streams directly to disk, RAM stays empty)
+    # ---------------------------------------------------------
     train_file_path = f"{data_dir}/processed_{data_name}_train.csv"
     test_file_path = f"{data_dir}/processed_{data_name}_test.csv"
-    with open(train_file_path, 'w') as train_file, open(test_file_path, 'w') as test_file:
-        for sd_pair, trajs in sd_cnt.items():
-            if len(trajs) >= min_sd_traj_num:
-                train_trajs = trajs[:-test_traj_num]
-                test_trajs = trajs[-test_traj_num:]
-
-                for traj in train_trajs:
-                    train_file.write(f"{traj}\n")
-
-                for traj in test_trajs:
-                    test_file.write(f"{traj}\n")
-
+    
+    with open(file_path, 'r') as file, \
+         open(train_file_path, 'w') as train_file, \
+         open(test_file_path, 'w') as test_file:
+             
+        for line_idx, line in enumerate(tqdm(file, desc="Pass 2: Writing Splits to Disk")):
+            if line_idx in train_targets:
+                traj = ast.literal_eval(line.strip())
+                converted = [(grid, time.localtime(ts)[:6]) for grid, ts in traj]
+                train_file.write(f"{converted}\n")
+                
+            elif line_idx in test_targets:
+                traj = ast.literal_eval(line.strip())
+                converted = [(grid, time.localtime(ts)[:6]) for grid, ts in traj]
+                test_file.write(f"{converted}\n")
 
 def count_sd_trajs(file_path):
     sd_count = defaultdict(int)
+    print(f"\nCounting final SD Trajectories in {file_path}...")
+    
     with open(file_path, 'r') as file:
-        for _, line in tqdm(enumerate(file)):
-            traj = ast.literal_eval(line.strip())
+        for line in tqdm(file, desc="Verifying Test Set"):
+            line = line.strip()
+            if not line: continue
+            
+            traj = ast.literal_eval(line)
             if traj:
                 s, d = traj[0][0], traj[-1][0]
                 sd_count[(s, d)] += 1
-    print(len(sd_count))
-    cnt = 0
-    for sd, count in sd_count.items():
-        cnt += count
-    print(cnt)
+                
+    cnt = sum(sd_count.values())
+    print(f"Total Unique SD Pairs in Test Set: {len(sd_count)}")
+    print(f"Total Trajectories in Test Set: {cnt}")
 
 
 # --- MOVE THESE TO GLOBAL SCOPE FOR WINDOWS MULTIPROCESSING ---
@@ -204,10 +243,10 @@ if __name__ == '__main__':
     with Pool(processes=4) as pool:
         pool.map(process_file_parallel, tasks)
     """    
-    print("All files processed. Merging...")
-    chengdu_merge()
+    #print("All files processed. Merging...")
+    #chengdu_merge()
     print("Merging complete. Processing Source-Destination (SD) splits...")
-    process_sd(chengdu_data_dir, chengdu_data_name, noise=False)
+    process_sd_ultra_low_ram(chengdu_data_dir, chengdu_data_name, noise=False)
     print("Counting SD trajectories...")
     count_sd_trajs(f"{chengdu_data_dir}/processed_{chengdu_data_name}_test.csv")
     print("Preprocessing fully complete!")

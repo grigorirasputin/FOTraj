@@ -219,8 +219,8 @@ if __name__ == "__main__":
 
         if outlier != 'noise':
             for sub in subset:
-                input_file = f'../../datasets/{dataset}/processed_{dataset}_{sub}.csv'
-                output_folder = f'../../datasets/{dataset}/{outlier}/{folder}'
+                input_file = f'datasets/{dataset}/processed_{dataset}_{sub}.csv'
+                output_folder = f'datasets/{dataset}/{outlier}/{folder}'
                 output_file = f'{output_folder}/{dataset}_{sub}_{outlier}.csv'
                 output_idx_file = f'{output_folder}/{dataset}_{sub}_{outlier}_idx.csv'
                 os.makedirs(output_folder, exist_ok=True)
