@@ -33,6 +33,10 @@ def cutting_trajs(traj, longest, shortest):
         traj = traj[random_length:]
     return cutted_trajs
 
+# --- OPTIMIZATION: Wrapper for Multiprocessing ---
+def process_file_parallel(args):
+    data_dir, file_name, noise = args
+    chengdu_process(data_dir, file_name, noise=noise)
 
 def chengdu_process(data_dir, data_name, noise=False):
     lat_size, lon_size = height2lat(grid_height), width2lon(grid_width)
@@ -44,9 +48,22 @@ def chengdu_process(data_dir, data_name, noise=False):
     trajectories.columns = ['id', 'lat', 'lon', 'state', 'timestamp']
     trajectories = trajectories[trajectories['state'] == 1]
     trajectories = trajectories.sort_values(by=['id', 'timestamp'])
+
+
+
     trajectories['timestamp'] = pd.to_datetime(trajectories['timestamp'], format='%Y/%m/%d %H:%M:%S')
     trajectories['timestamp'] = trajectories['timestamp'].apply(lambda x: x.timestamp())
+    
+
+    # ... (Keep the pandas dataframe setup above this) ...
     trajectories['timestamp_gap'] = trajectories.groupby('id')['timestamp'].diff()
+
+    # --- OPTIMIZATION: Extract to raw NumPy arrays for lightning-fast loop access ---
+    ids = trajectories['id'].values
+    lats = trajectories['lat'].values
+    lons = trajectories['lon'].values
+    timestamps = trajectories['timestamp'].values
+    gaps = trajectories['timestamp_gap'].values
 
     trajs = []
     traj_seq = []
@@ -54,23 +71,27 @@ def chengdu_process(data_dir, data_name, noise=False):
     noise_std = 0.0005
     shortest, longest = 30, 120
 
-    for i in tqdm(range(1, len(trajectories))):
-        point = trajectories.iloc[i]
-        pre_point = trajectories.iloc[i - 1]
+    # Iterate using standard indices on the NumPy arrays
+    for i in tqdm(range(1, len(trajectories)), desc=f"Processing {data_name}"):
+        curr_id = ids[i]
+        pre_id = ids[i - 1]
+        gap = gaps[i]
 
-        if point.id == pre_point.id and point['timestamp_gap'] <= 180:
-            lat, lon = point.lat, point.lon
+        if curr_id == pre_id and gap <= 180:
+            lat = lats[i]
+            lon = lons[i]
+            
             if noise and len(traj_seq) >= 2:
                 if np.random.rand() < 0.2:
-                    noisy_lat = lat + np.random.normal(0, noise_std)
-                    noisy_lon = lon + np.random.normal(0, noise_std)
-                    lat, lon = noisy_lat, noisy_lon
+                    # Apply noise
+                    lat += np.random.normal(0, noise_std)
+                    lon += np.random.normal(0, noise_std)
 
             if in_boundary(lon, lat, chengdu_boundary):
                 lat_grid = int((lat - chengdu_boundary['min_lat']) / lat_size)
                 lon_grid = int((lon - chengdu_boundary['min_lon']) / lon_size)
                 grid_value = int(lat_grid * lon_grid_num + lon_grid)
-                traj_seq.append([grid_value, point.timestamp])
+                traj_seq.append([grid_value, timestamps[i]])
             else:
                 valid = False
         else:
@@ -82,7 +103,8 @@ def chengdu_process(data_dir, data_name, noise=False):
             traj_seq = []
             valid = True
 
-    print("Valid trajectory num:", len(trajs))
+    print(f"Valid trajectory num for {data_name}:", len(trajs))
+    # ... (Keep the file writing logic below this exactly the same) ...
     if noise:
         data_name = f"{data_name}_noise"
     output_file = f"{data_dir}/processed_{data_name}.csv"
@@ -98,7 +120,7 @@ def chengdu_process(data_dir, data_name, noise=False):
 
 
 def chengdu_merge(noise=False):
-    data_dir = '../../datasets/chengdu'
+    data_dir = r'datasets/chengdu'
     file_list = ['20140803_train', '20140804_train', '20140805_train', '20140806_train', '20140808_train', '20140809_train', '20140810_train', '20140811_train', '20140812_train', '20140814_train']
     if noise:
         file_list = [f"{file_name}_noise" for file_name in file_list]
@@ -162,15 +184,30 @@ def count_sd_trajs(file_path):
     print(cnt)
 
 
+# --- MOVE THESE TO GLOBAL SCOPE FOR WINDOWS MULTIPROCESSING ---
+grid_height, grid_width = 0.1, 0.1
+chengdu_boundary = {'min_lat': 30.50, 'max_lat': 30.80, 'min_lon': 103.9, 'max_lon': 104.2}
+
 if __name__ == '__main__':
-    chengdu_data_dir = '../../datasets/chengdu'
+    chengdu_data_dir = r'datasets/chengdu'
     chengdu_data_name = "chengdu"
-    grid_height, grid_width = 0.1, 0.1
-    chengdu_boundary = {'min_lat': 30.50, 'max_lat': 30.80, 'min_lon': 103.9, 'max_lon': 104.2}
+    r"""
+  
     file_list = ['20140803_train', '20140804_train', '20140805_train', '20140806_train', '20140808_train',
                  '20140809_train', '20140810_train', '20140811_train', '20140812_train', '20140814_train']
-    for i in range(10):
-        chengdu_process(chengdu_data_dir, file_list[i], noise=False)
+    
+    # --- OPTIMIZATION: Execute in Parallel ---
+    print("Starting parallel preprocessing...")
+    tasks = [(chengdu_data_dir, f, False) for f in file_list]
+    
+    # Run 4 files at a time to manage RAM
+    with Pool(processes=4) as pool:
+        pool.map(process_file_parallel, tasks)
+    """    
+    print("All files processed. Merging...")
     chengdu_merge()
+    print("Merging complete. Processing Source-Destination (SD) splits...")
     process_sd(chengdu_data_dir, chengdu_data_name, noise=False)
+    print("Counting SD trajectories...")
     count_sd_trajs(f"{chengdu_data_dir}/processed_{chengdu_data_name}_test.csv")
+    print("Preprocessing fully complete!")
