@@ -9,7 +9,6 @@ from scipy.signal import max_len_seq
 from torch import optim
 from torch.nn import functional
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from prompt import Prompt
 from layers import GraphEncoder, GraphDecoder
 
 class STAno(nn.Module):
@@ -18,12 +17,26 @@ class STAno(nn.Module):
         self.task = configs.task
         self.device = configs.device
         self.tokenizer = AutoTokenizer.from_pretrained(configs.LLM_path)
-        self.model = AutoModelForCausalLM.from_pretrained(configs.LLM_path, device_map="auto")
+        
+        # --- MODIFICATION: Inject 4-bit Quantization to fit your RTX 5070 Ti ---
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16 
+        )
+        
+        self.model = AutoModelForCausalLM.from_pretrained(
+            configs.LLM_path, 
+            quantization_config=bnb_config,
+            device_map="auto"
+        )
+        
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
             self.tokenizer.pad_token_id = self.tokenizer.convert_tokens_to_ids(self.tokenizer.pad_token)
-        if configs.use_gpu:
-            self.model.to(self.device)
+            
+        # --- MODIFICATION: Removed the illegal self.model.to(self.device) call ---
         self.model = get_peft_model(self.model, LoraConfig(r=16, lora_alpha=32,
                                                            target_modules=["q_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj"],
                                                            lora_dropout=0.05, bias="none", task_type="CAUSAL_LM"))

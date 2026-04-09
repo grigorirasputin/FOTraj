@@ -19,6 +19,7 @@ from transformers import BitsAndBytesConfig, AutoModelForCausalLM
 from STAno import STAno
 from tools import EarlyStopping, setup_logger, adjust_learning_rate
 from data_provider.dataloader import load_data, collate_fn, GraphDataset
+from huggingface_hub import login
 
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -28,6 +29,11 @@ np.random.seed(42)
 torch.manual_seed(42)
 torch.cuda.manual_seed(42)
 torch.cuda.manual_seed_all(42)
+
+
+
+
+login(token="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") # Insert your actual token
 
 
 class Trainer:
@@ -301,7 +307,7 @@ def parse_args():
     parser.add_argument('--task', type=str, required=True, default='detour', help="Task to perform (e.g., 'detour', 'switch', 'time', 'loop')")
     parser.add_argument('--anomaly_ratio', type=float, default=5, help="Anomaly ratio (%)")
     parser.add_argument('--detour_level', type=float, default=3, help="Detour level")
-    parser.add_argument('--point_prob', type=float, default=0.1, help="Point prob")
+    parser.add_argument('--point_prob', type=float, default=0.3, help="Point prob")
     parser.add_argument('--switch_level', type=float, default=0.3, help="Switch level")
     parser.add_argument('--time_level', type=float, default=15, help="Time level")
     parser.add_argument('--loop_level', type=float, default=1, help="Loop level")
@@ -322,23 +328,33 @@ def parse_args():
 
 
 def load_task_data(dataset, training, noise, task, level, prob=None):
+    # Hardcoded absolute path based on your exact folder structure
+    base_dir = r"C:\Users\test\Documents\GitHub\FOTraj\FOTraj\data_provider\datasets"
+    
     if training:
         if noise:
-            train_data = load_data(f'../datasets/{dataset}/processed_{dataset}_noise_train.csv')
+            train_data = load_data(f'{base_dir}\\{dataset}\\processed_{dataset}_noise_train.csv')
         else:
-            train_data = load_data(f'../datasets/{dataset}/processed_{dataset}_train.csv')
+            train_data = load_data(f'{base_dir}\\{dataset}\\processed_{dataset}_train.csv')
     else:
         train_data = None
-    task_path = f'../datasets/{dataset}/{task}/{task}_{level}'
+        
+    task_path = f'{base_dir}\\{dataset}\\{task}\\{task}_{level}'
     if prob:
         task_path += f'_prob_{prob}'
-    test_data = load_data(f'{task_path}/{dataset}_test_{task}.csv')
-    test_label_id = load_data(f'{task_path}/{dataset}_test_{task}_idx.csv')
+        
+    test_data = load_data(f'{task_path}\\{dataset}_test_{task}.csv')
+    test_label_id = load_data(f'{task_path}\\{dataset}_test_{task}_idx.csv')
     return train_data, test_data, test_label_id
 
 
 def main(args, current_time):
+    # --- HARDCODE OVERRIDES TO FIX ARGPARSE BUG ---
+    args.noise = False
+    args.is_training = True 
+    
     data_load_start_time = time.time()
+
     if args.task == 'detour':
         train_data, test_data, test_label_id = load_task_data(args.dataset, args.is_training, args.noise, args.task, args.detour_level, args.point_prob)
     elif args.task == 'switch':
