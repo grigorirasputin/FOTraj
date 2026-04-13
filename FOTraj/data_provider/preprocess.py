@@ -141,7 +141,6 @@ def chengdu_merge(noise=False):
                     merged_file.write(line)
 
 
-
 def process_sd_ultra_low_ram(data_dir, data_name, noise=False):
     min_sd_traj_num = 25
     test_traj_num = 5
@@ -224,13 +223,13 @@ def count_sd_trajs(file_path):
 
 
 # --- MOVE THESE TO GLOBAL SCOPE FOR WINDOWS MULTIPROCESSING ---
-grid_height, grid_width = 0.1, 0.1
+grid_height, grid_width = 0.3, 0.3 # Was noted as 0.1, 0.1 in the code, but according to the paper it should be 0.3, 0.3    
 chengdu_boundary = {'min_lat': 30.50, 'max_lat': 30.80, 'min_lon': 103.9, 'max_lon': 104.2}
 
 if __name__ == '__main__':
     chengdu_data_dir = r'datasets/chengdu'
     chengdu_data_name = "chengdu"
-    r"""
+   
   
     file_list = ['20140803_train', '20140804_train', '20140805_train', '20140806_train', '20140808_train',
                  '20140809_train', '20140810_train', '20140811_train', '20140812_train', '20140814_train']
@@ -242,9 +241,9 @@ if __name__ == '__main__':
     # Run 4 files at a time to manage RAM
     with Pool(processes=4) as pool:
         pool.map(process_file_parallel, tasks)
-    """    
+  
     #print("All files processed. Merging...")
-    #chengdu_merge()
+    chengdu_merge()
     print("Merging complete. Processing Source-Destination (SD) splits...")
     process_sd_ultra_low_ram(chengdu_data_dir, chengdu_data_name, noise=False)
     print("Counting SD trajectories...")

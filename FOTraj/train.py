@@ -3,7 +3,7 @@ import csv
 import time
 from datetime import datetime
 from logging import critical
-
+from tqdm import tqdm
 import numpy as np
 import torch
 from sklearn.metrics import precision_recall_fscore_support, auc, roc_auc_score, precision_recall_curve, \
@@ -22,8 +22,10 @@ from data_provider.dataloader import load_data, collate_fn, GraphDataset
 from huggingface_hub import login
 
 import os
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-torch.autograd.set_detect_anomaly(True)
+
+#torch.autograd.set_detect_anomaly(True)
 
 np.random.seed(42)
 torch.manual_seed(42)
@@ -33,7 +35,7 @@ torch.cuda.manual_seed_all(42)
 
 
 
-login(token="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") # Insert your actual token
+login(token="") # Insert your actual token
 
 
 class Trainer:
@@ -79,7 +81,7 @@ class Trainer:
         return nodes_tensor, edge_indices_tensor, edge_attrs_tensor, adj_tensor
 
     def train(self, current_time):
-        best_model_folder = os.path.join("../checkpoints", f"{self.args.task}_{self.args.dataset}_{current_time}")
+        best_model_folder = os.path.join("checkpoints", f"{self.args.task}_{self.args.dataset}_{current_time}")
         os.makedirs(best_model_folder, exist_ok=True)
 
         ce_criterion = self._select_criterion('classification')
@@ -98,8 +100,8 @@ class Trainer:
 
             consecutive_errors = 0
             stop_training = False
-
-            for i, batch_data in enumerate(self.train_loader):
+            # --- We added tqdm here to track batch progress! ---
+            for i, batch_data in enumerate(tqdm(self.train_loader, desc=f"Epoch {epoch + 1}/{self.args.train_epochs}")):
                 if stop_training:
                     break
                 try:
@@ -157,6 +159,8 @@ class Trainer:
 
                 except Exception as e:
                     logger.warning(f"Exception occurred at epoch {epoch + 1}, batch {i + 1}: {e}")
+                    raise e  # --- WE ADDED THIS TO REVEAL THE HIDDEN ERROR ---
+                    
                     consecutive_errors += 1
                     if consecutive_errors >= 10:
                         logger.error("Three consecutive errors occurred. Stopping training.")
@@ -225,7 +229,7 @@ class Trainer:
                     loss3 = recon_criterion(embedded_output, embedded_input)
                     loss = 0.1 * loss1 + 0.5 * loss2 + 0.4 * loss3
 
-            total_loss.append(loss.item())
+                total_loss.append(loss.item())
 
         total_loss = np.average(total_loss)
         self.model.train()
@@ -365,23 +369,31 @@ def main(args, current_time):
         train_data, test_data, test_label_id = load_task_data(args.dataset, args.is_training, args.noise, args.task, args.loop_level)
     else:
         raise ValueError("Invalid task")
+        
     test_labels = np.zeros(len(test_data))
     test_labels[test_label_id] = 1
+    
+    # --- THE FIXED DATALOADERS ---
     if args.is_training:
-        train_loader = DataLoader(dataset=GraphDataset(train_data), batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, pin_memory=True)
+        train_loader = DataLoader(dataset=GraphDataset(train_data), batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, pin_memory=True) 
     else:
         train_loader = None
-    test_loader = DataLoader(dataset=GraphDataset(test_data), batch_size=args.batch_size, collate_fn=collate_fn, num_workers=8, pin_memory=True)
+    test_loader = DataLoader(dataset=GraphDataset(test_data), batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, pin_memory=True)
+    
+    data_load_end_time = time.time()
+    logger.info("Data loading time: {}".format(data_load_end_time - data_load_start_time))
+
+    # --- THE MISSING INITIALIZATION ---
     if args.is_training:
         trainer = Trainer(train_loader,  test_loader, test_labels, args)
     else:
         trainer = Trainer(None, test_loader, test_labels, args)
-    data_load_end_time = time.time()
-    logger.info("Data loading time: {}".format(data_load_end_time - data_load_start_time))
+
+    # --- RUN THE TRAINING & TESTING (Lowercase 'trainer') ---
     if args.is_training:
         trainer.train(current_time)
+        
     trainer.test()
-
 
 if __name__ == '__main__':
     args = parse_args()

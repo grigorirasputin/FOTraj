@@ -48,7 +48,7 @@ class GraphEncoder(nn.Module):
         self.edge_indices_embedding = nn.Embedding(edge_indices_size, hidden_dim)
         self.edge_attr_embedding = nn.Embedding(edge_attr_size, hidden_dim)
 
-        self.positional_embedding = PositionalEmbedding(hidden_dim, max_len=node_vocab_size)
+        self.positional_embedding = PositionalEmbedding(hidden_dim, max_len=128)
         self.gate_mlp = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),

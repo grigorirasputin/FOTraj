@@ -80,15 +80,16 @@ def build_sparse_graph(data, num_workers=4):
 class GraphDataset(Dataset):
     def __init__(self, data):
         self.data = data
-        self.graphs, self.adj_matrices, self.adj_mask = build_sparse_graph(data)
+        # --- MODIFICATION: Removed the memory-crushing pre-computation ---
+        # self.graphs, self.adj_matrices, self.adj_mask = build_sparse_graph(data)
 
     def __len__(self):
-        return len(self.graphs)
+        return len(self.data)
 
     def __getitem__(self, idx):
-        graph = self.graphs[idx]
-        adj_matrix = self.adj_matrices[idx]
-        adj_mask = self.adj_mask[idx]
+        # --- MODIFICATION: Build the graph on-the-fly to keep RAM near 0% ---
+        traj = self.data[idx]
+        graph, adj_matrix, adj_mask = build_graph(traj)
 
         node_ids = list(graph.nodes())
         edge_list = list(graph.edges())

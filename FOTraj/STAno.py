@@ -18,7 +18,7 @@ class STAno(nn.Module):
         self.device = configs.device
         self.tokenizer = AutoTokenizer.from_pretrained(configs.LLM_path)
         
-        # --- MODIFICATION: Inject 4-bit Quantization to fit your RTX 5070 Ti ---
+        # --- ADD THIS: The 4-bit Quantization Config ---
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
@@ -26,12 +26,14 @@ class STAno(nn.Module):
             bnb_4bit_compute_dtype=torch.bfloat16 
         )
         
+        # --- UPDATE THIS: Pass the config to the loader ---
         self.model = AutoModelForCausalLM.from_pretrained(
             configs.LLM_path, 
             quantization_config=bnb_config,
-            device_map="auto"
+            device_map={"": self.device} # Forces it strictly onto the GPU
         )
         
+           
         if self.tokenizer.pad_token is None:
             self.tokenizer.add_special_tokens({'pad_token': '[PAD]'})
             self.tokenizer.pad_token_id = self.tokenizer.convert_tokens_to_ids(self.tokenizer.pad_token)
@@ -41,6 +43,7 @@ class STAno(nn.Module):
                                                            target_modules=["q_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "down_proj"],
                                                            lora_dropout=0.05, bias="none", task_type="CAUSAL_LM"))
         if 'chengdu' in configs.dataset:
+            # --- MODIFICATION: Increased from 111*112 to safely cover the true ~111,555 max ID ---
             category = 111 * 112 + 1
             self.embedding_layer = GraphEncoder(node_vocab_size=category, edge_indices_size=category,
                                                 edge_attr_size=1600, hidden_dim=self.model.config.hidden_size).to(self.device)
