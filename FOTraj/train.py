@@ -35,7 +35,7 @@ torch.cuda.manual_seed_all(42)
 
 
 
-login(token="") # Insert your actual token
+
 
 
 class Trainer:
@@ -379,7 +379,7 @@ def main(args, current_time):
     else:
         train_loader = None
     test_loader = DataLoader(dataset=GraphDataset(test_data), batch_size=args.batch_size, collate_fn=collate_fn, num_workers=4, pin_memory=True)
-    
+
     data_load_end_time = time.time()
     logger.info("Data loading time: {}".format(data_load_end_time - data_load_start_time))
 
